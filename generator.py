@@ -31,7 +31,7 @@ def carve_maze(cells, connections, seed, forced_edges=()):
 	tree = nx.minimum_spanning_tree(graph, algorithm="kruskal", weight="weight")
 	required_edges = {edge_key(a, b) for a, b in forced_edges}
 
-	for a, b in required_edges:
+	for a, b in sorted(required_edges):
 		if not graph.has_edge(a, b):
 			raise ValueError(f"Required passage {a} -> {b} is not valid.")
 		if tree.has_edge(a, b):
