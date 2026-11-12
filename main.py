@@ -10,7 +10,7 @@ from geometry import (
 )
 from multifloor import build_three_floor_maze, validate_route
 
-SEED = "Maze11"
+SEED = "Maze13"
 
 
 def main():
