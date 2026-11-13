@@ -150,7 +150,14 @@ class TestSvgRenderer(unittest.TestCase):
         floor_one = self.parse(svgs[1])
         floor_three = self.parse(svgs[3])
         self.assertEqual(len(_elements(floor_one, "entrance")), 1)
-        self.assertEqual(len(_elements(floor_one, "entrance-connector")), 2)
+        entrance_blocks = {
+            (int(item.attrib["x"]), int(item.attrib["y"]))
+            for item in _elements(floor_one, "entrance-connector")
+        }
+        self.assertEqual(
+            entrance_blocks,
+            set(map(tuple, self.blueprint["entrance"]["opening_blocks"])),
+        )
         self.assertEqual(len(_elements(floor_three, "finish")), 1)
         self.assertEqual(len(_elements(floor_three, "finish-connector")), 2)
 
