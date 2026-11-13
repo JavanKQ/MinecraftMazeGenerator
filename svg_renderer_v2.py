@@ -166,7 +166,7 @@ def render_floor_svg(blueprint, floor, show_solution=False):
     # appearance is the absence of the wall that would otherwise occupy the gap.
     for passage in floor_data["open_passages"]:
         cells = passage["cells"]
-        _add(
+        group = _add(
             root,
             "g",
             {
@@ -174,6 +174,8 @@ def render_floor_svg(blueprint, floor, show_solution=False):
                 "data-cells": f"{_cell_text(cells[0])}|{_cell_text(cells[1])}",
             },
         )
+        for x, z in passage["opening_blocks"]:
+            _rect(group, x, z, 1, 1, "open-passage-block", fill="#ffffff")
 
     for wall in floor_data["wall_segments"]:
         cells = wall["cells"]
