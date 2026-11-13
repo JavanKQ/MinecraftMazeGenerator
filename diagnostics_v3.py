@@ -8,6 +8,7 @@ test run take several minutes.
 from __future__ import annotations
 
 import argparse
+import time
 from collections import Counter
 from statistics import mean, median
 
@@ -95,20 +96,25 @@ def run_stress_test(
     failures = []
     for index in range(1, seed_count + 1):
         seed = f"{seed_prefix}-{index:04d}"
+        started = time.perf_counter()
         try:
             layout = build_physical_layout(
                 seed=seed,
                 loop_percentage=loop_percentage,
                 max_attempts=max_attempts,
             )
-            results.append(summarize_layout(layout))
+            result = summarize_layout(layout)
+            result["elapsed_seconds"] = round(time.perf_counter() - started, 2)
+            results.append(result)
         except Exception as error:
             failures.append({
                 "seed": seed,
+                "elapsed_seconds": round(time.perf_counter() - started, 2),
                 "error": f"{type(error).__name__}: {error}",
             })
 
     attempts = [item["attempts"] for item in results]
+    elapsed_times = [item["elapsed_seconds"] for item in results]
     all_region_sizes = [
         size
         for result in results
@@ -143,6 +149,12 @@ def run_stress_test(
             "mean": round(mean(attempts), 2) if attempts else None,
             "maximum": max(attempts) if attempts else None,
         },
+        "runtime_statistics_seconds": {
+            "minimum": min(elapsed_times) if elapsed_times else None,
+            "median": median(elapsed_times) if elapsed_times else None,
+            "mean": round(mean(elapsed_times), 2) if elapsed_times else None,
+            "maximum": max(elapsed_times) if elapsed_times else None,
+        },
         "region_size_statistics": {
             "minimum": min(all_region_sizes) if all_region_sizes else None,
             "median": median(all_region_sizes) if all_region_sizes else None,
@@ -168,6 +180,7 @@ def print_report(report: dict) -> None:
     config = report["configuration"]
     attempts = report["attempt_statistics"]
     sizes = report["region_size_statistics"]
+    runtime = report["runtime_statistics_seconds"]
 
     print("Minecraft Maze v3 — physical layout stress test")
     print("=" * 52)
@@ -186,6 +199,11 @@ def print_report(report: dict) -> None:
         f'mean={attempts["mean"]}, max={attempts["maximum"]}'
     )
     print(
+        "Runtime (seconds): "
+        f'min={runtime["minimum"]}, median={runtime["median"]}, '
+        f'mean={runtime["mean"]}, max={runtime["maximum"]}'
+    )
+    print(
         "Region sizes (cells): "
         f'min={sizes["minimum"]}, median={sizes["median"]}, '
         f'mean={sizes["mean"]}, max={sizes["maximum"]}'
@@ -199,6 +217,7 @@ def print_report(report: dict) -> None:
         )
         print(
             f'  {result["seed"]}: attempt {result["attempts"]}, '
+            f'{result["elapsed_seconds"]}s, '
             f'{result["navigation"]["transition_area_count"]} areas, '
             f'{result["navigation"]["minimum_vertical_journeys"]} journeys, '
             f'{floor_summary}'
