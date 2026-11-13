@@ -39,8 +39,8 @@ def _edge_key(cell_a, cell_b):
     return tuple(sorted((cell_a, cell_b)))
 
 
-def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds=None):
-    """Partition one connected floor graph into connected seeded territories."""
+def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds):
+    """Grow connected territories around all preselected transition anchors."""
     cells = set(cells)
     if not cells:
         raise ValueError(f"Floor {floor} has no playable cells.")
@@ -56,45 +56,42 @@ def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds
     if not nx.is_connected(base_graph):
         raise ValueError(f"Floor {floor}'s physical cell graph is disconnected.")
 
-    ordered_cells = sorted(cells)
-    seeds = {}
-    used = set()
-    fixed_seeds = fixed_seeds or {}
+    region_ids = {region["id"] for region in regions}
+    if set(fixed_seeds) != region_ids:
+        raise ValueError(
+            f"Floor {floor} must have transition anchors for every assigned region."
+        )
 
-    for region in regions:
-        region_id = region["id"]
-        if region_id in fixed_seeds:
-            seed = fixed_seeds[region_id]
-            if seed not in cells:
-                raise ValueError(f"Fixed seed for {region_id} is not playable.")
-        elif floor == 1 and region_id == "R00":
-            candidates = sorted(nearest_endpoint_cells(cells, ENTRANCE))
-            seed = rng.choice(candidates)
-        elif floor == FINISH_FLOOR and region_id == "R09":
-            seed = FINISH_ENTRANCE_CELL
-            if seed not in cells:
-                raise ValueError("The finish entrance cell is not playable.")
-        else:
-            candidates = [cell for cell in ordered_cells if cell not in used]
-            if not candidates:
-                raise ValueError(f"Floor {floor} has too few cells for its regions.")
-            seed = rng.choice(candidates)
-
-        if seed in used:
-            raise ValueError(f"Two regions on Floor {floor} received the same seed.")
-        seeds[region_id] = seed
-        used.add(seed)
-
-    # Simultaneous breadth-first growth. A cell is claimed once, by the first
-    # region to reach it; every claimed cell therefore has a same-region path
-    # back to that region's original seed.
     labels = {}
     pending = deque()
-    seed_items = list(seeds.items())
+    anchors = {}
+
+    # First reserve every required endpoint. A transition cell is therefore
+    # guaranteed to belong to the intended region on both floors it serves.
+    for region in regions:
+        region_id = region["id"]
+        region_anchors = set(fixed_seeds[region_id])
+        if not region_anchors:
+            raise ValueError(f"Region {region_id} has no physical anchor on Floor {floor}.")
+        if not region_anchors <= cells:
+            raise ValueError(f"An anchor for {region_id} is not playable on Floor {floor}.")
+        anchors[region_id] = region_anchors
+        for cell in region_anchors:
+            if cell in labels:
+                raise ValueError(
+                    f"Two regions claim the same anchor cell {cell} on Floor {floor}."
+                )
+            labels[cell] = region_id
+
+    # Multi-source growth expands each region from all of its required
+    # transition endpoints. Random queue order varies the resulting borders.
+    seed_items = [
+        (region_id, cell)
+        for region_id, region_anchors in anchors.items()
+        for cell in region_anchors
+    ]
     rng.shuffle(seed_items)
-    for region_id, seed in seed_items:
-        labels[seed] = region_id
-        pending.append((region_id, seed))
+    pending.extend(seed_items)
 
     while pending:
         region_id, cell = pending.popleft()
@@ -115,18 +112,20 @@ def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds
     for region_id, assigned in region_cells.items():
         if not assigned:
             raise ValueError(f"Region {region_id} is empty on Floor {floor}.")
-        induced = base_graph.subgraph(assigned)
-        if not nx.is_connected(induced):
+        if not nx.is_connected(base_graph.subgraph(assigned)):
             raise ValueError(
                 f"Region {region_id} is disconnected on Floor {floor}."
             )
 
-    return labels, region_cells, seeds, base_graph
+    return labels, region_cells, anchors, base_graph
 
 
-def _match_transition_cells(plan, region_cells, start_cell, rng):
-    """Assign a distinct shared-grid cell to every planned transition area."""
-    reserved = {start_cell, FINISH_ENTRANCE_CELL}
+def _select_transition_cells(plan, floor_grids, reserved_cells, rng):
+    """Choose unique valid X/Z cells before assigning any region boundaries.
+
+    Candidate cells need only fit on the two floors served by that physical
+    transition. Region membership is then built around these fixed anchors.
+    """
     matching_graph = nx.Graph()
     area_nodes = []
     candidates_by_area = {}
@@ -136,22 +135,18 @@ def _match_transition_cells(plan, region_cells, start_cell, rng):
         area_nodes.append(area_node)
         source_floor = area["from_floor"]
         destination_floor = area["to_floor"]
-        source_region = area["source_region"]
-        destination_region = area["destination_region"]
-
-        candidates = (
-            region_cells[source_floor][source_region]
-            & region_cells[destination_floor][destination_region]
-        ) - reserved
+        source_cells = floor_grids[source_floor][0]
+        destination_cells = floor_grids[destination_floor][0]
+        candidates = (source_cells & destination_cells) - set(reserved_cells)
         if not candidates:
             raise ValueError(
-                f"{area['id']} has no shared cell between "
-                f"{source_region} and {destination_region}."
+                f"{area['id']} has no physically shared cell between "
+                f"Floor {source_floor} and Floor {destination_floor}."
             )
 
         ordered_candidates = list(candidates)
         rng.shuffle(ordered_candidates)
-        candidates_by_area[area["id"]] = set(candidates)
+        candidates_by_area[area["id"]] = candidates
         matching_graph.add_node(area_node, bipartite=0)
         for cell in ordered_candidates:
             matching_graph.add_edge(area_node, ("cell", cell))
@@ -168,24 +163,21 @@ def _match_transition_cells(plan, region_cells, start_cell, rng):
 
     if len(assigned) != len(plan["transition_areas"]):
         missing = sorted(
-            set(area["id"] for area in plan["transition_areas"]) - set(assigned)
+            {area["id"] for area in plan["transition_areas"]} - set(assigned)
         )
         raise ValueError(
-            "Could not assign unique physical cells to every transition area; "
+            "Could not assign unique physical cells to all transition areas; "
             f"unmatched: {', '.join(missing)}."
         )
 
-    # Defensive check: matching must never select a non-candidate or a
-    # reserved entrance/finish connector cell.
-    used_cells = list(assigned.values())
-    if len(used_cells) != len(set(used_cells)) or reserved.intersection(used_cells):
-        raise ValueError("Transition-cell matching produced a duplicate/reserved cell.")
+    chosen = list(assigned.values())
+    if len(chosen) != len(set(chosen)) or set(chosen) & set(reserved_cells):
+        raise ValueError("Transition matching produced duplicate or reserved cells.")
     for area_id, cell in assigned.items():
         if cell not in candidates_by_area[area_id]:
-            raise ValueError(f"Transition {area_id} was assigned an invalid cell.")
+            raise ValueError(f"{area_id} was assigned a cell outside its floor overlap.")
 
     return assigned
-
 
 def _carve_region(region_cells, connections, rng, loop_percentage):
     """Carve a randomized spanning tree plus a percentage of extra loops."""
@@ -411,6 +403,31 @@ def build_physical_layout(
             )
             start_cell = rng.choice(start_candidates)
 
+            assigned_cells = _select_transition_cells(
+                plan,
+                grids,
+                {start_cell, FINISH_ENTRANCE_CELL},
+                rng,
+            )
+
+            # Build a set of required endpoint anchors for every region on
+            # every floor. The transition map is now fixed before partitioning.
+            anchors_by_floor = {
+                floor: {
+                    region["id"]: set()
+                    for region in plan["regions"]
+                    if region["floor"] == floor
+                }
+                for floor in FLOORS
+            }
+            for area in plan["transition_areas"]:
+                cell = assigned_cells[area["id"]]
+                anchors_by_floor[area["from_floor"]][area["source_region"]].add(cell)
+                anchors_by_floor[area["to_floor"]][area["destination_region"]].add(cell)
+
+            anchors_by_floor[1]["R00"].add(start_cell)
+            anchors_by_floor[FINISH_FLOOR]["R09"].add(FINISH_ENTRANCE_CELL)
+
             for floor in FLOORS:
                 floor_regions = [
                     region
@@ -420,27 +437,17 @@ def build_physical_layout(
                 if not floor_regions:
                     raise ValueError(f"No regions were assigned to Floor {floor}.")
 
-                fixed_seeds = {}
-                if floor == 1:
-                    fixed_seeds["R00"] = start_cell
                 labels, assigned, seeds, _ = _grow_connected_regions(
                     grids[floor][0],
                     grids[floor][1],
                     floor_regions,
                     rng,
                     floor,
-                    fixed_seeds=fixed_seeds,
+                    fixed_seeds=anchors_by_floor[floor],
                 )
                 region_labels[floor] = labels
                 region_cells[floor] = assigned
                 region_seeds[floor] = seeds
-
-            assigned_cells = _match_transition_cells(
-                plan,
-                region_cells,
-                start_cell,
-                rng,
-            )
 
             transition_areas = []
             for area in plan["transition_areas"]:
