@@ -102,7 +102,10 @@ def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds
             for anchor in region_anchors:
                 allowed = {
                     cell for cell in cells
-                    if cell not in claimed_by or claimed_by[cell] == region_id
+                    if (
+                        (cell not in claimed_by or claimed_by[cell] == region_id)
+                        and anchor_owner.get(cell, region_id) == region_id
+                    )
                 }
                 allowed_graph = base_graph.subgraph(allowed)
                 try:
