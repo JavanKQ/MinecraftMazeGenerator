@@ -416,3 +416,20 @@ def render_all_floor_svgs(blueprint, show_solution=False):
         floor: render_floor_svg(blueprint, floor, show_solution=show_solution)
         for floor in sorted(blueprint["floors"])
     }
+
+
+def write_all_floor_svgs(blueprint, output_dir, show_solution=False):
+    """Write one SVG per floor and return the resulting paths."""
+    from pathlib import Path
+
+    directory = Path(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    suffix = "_solution" if show_solution else ""
+    paths = {}
+    for floor, svg in render_all_floor_svgs(
+        blueprint, show_solution=show_solution
+    ).items():
+        path = directory / f"floor_{floor}{suffix}.svg"
+        path.write_text(svg, encoding="utf-8")
+        paths[floor] = path
+    return paths
