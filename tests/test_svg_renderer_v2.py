@@ -63,6 +63,37 @@ class TestSvgRenderer(unittest.TestCase):
                 len(data["transitions"]),
             )
 
+    def test_footprints_and_corridor_cells_keep_exact_coordinates(self):
+        svgs = render_all_floor_svgs(self.blueprint)
+        for floor, svg in svgs.items():
+            root = self.parse(svg)
+            floor_data = self.blueprint["floors"][floor]
+            actual_footprints = {
+                (
+                    int(rect.attrib["x"]),
+                    int(rect.attrib["y"]),
+                    int(rect.attrib["width"]),
+                    int(rect.attrib["height"]),
+                )
+                for rect in _elements(root, "footprint")
+            }
+            expected_footprints = {
+                (
+                    item["min_x"],
+                    item["min_z"],
+                    item["max_x"] - item["min_x"] + 1,
+                    item["max_z"] - item["min_z"] + 1,
+                )
+                for item in floor_data["footprint"]
+            }
+            self.assertEqual(actual_footprints, expected_footprints)
+
+            actual_cells = {
+                tuple(map(int, item.attrib["data-cell"].split(",")))
+                for item in _elements(root, "corridor-cell")
+            }
+            self.assertEqual(actual_cells, set(floor_data["cells"]))
+
     def test_each_svg_wall_segment_contains_its_three_exact_blocks(self):
         svgs = render_all_floor_svgs(self.blueprint)
         for floor, svg in svgs.items():
