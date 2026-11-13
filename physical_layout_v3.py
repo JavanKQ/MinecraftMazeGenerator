@@ -39,7 +39,7 @@ def _edge_key(cell_a, cell_b):
     return tuple(sorted((cell_a, cell_b)))
 
 
-def _grow_connected_regions(cells, connections, regions, rng, floor):
+def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds=None):
     """Partition one connected floor graph into connected seeded territories."""
     cells = set(cells)
     if not cells:
@@ -59,10 +59,15 @@ def _grow_connected_regions(cells, connections, regions, rng, floor):
     ordered_cells = sorted(cells)
     seeds = {}
     used = set()
+    fixed_seeds = fixed_seeds or {}
 
     for region in regions:
         region_id = region["id"]
-        if floor == 1 and region_id == "R00":
+        if region_id in fixed_seeds:
+            seed = fixed_seeds[region_id]
+            if seed not in cells:
+                raise ValueError(f"Fixed seed for {region_id} is not playable.")
+        elif floor == 1 and region_id == "R00":
             candidates = sorted(nearest_endpoint_cells(cells, ENTRANCE))
             seed = rng.choice(candidates)
         elif floor == FINISH_FLOOR and region_id == "R09":
@@ -317,16 +322,18 @@ def validate_physical_layout(layout):
                 )
 
         for region_id, assigned in region_cells[floor].items():
-            if assigned and not nx.is_connected(
-                nx.Graph(
-                    [
-                        (cell, neighbor)
-                        for cell in assigned
-                        for neighbor in maze["connections"][cell]
-                        if neighbor in assigned
-                    ]
-                ).subgraph(assigned)
-            ):
+            if assigned:
+                region_graph = nx.Graph()
+                region_graph.add_nodes_from(assigned)
+                region_graph.add_edges_from(
+                    (cell, neighbor)
+                    for cell in assigned
+                    for neighbor in maze["connections"][cell]
+                    if neighbor in assigned
+                )
+            else:
+                region_graph = nx.Graph()
+            if assigned and not nx.is_connected(region_graph):
                 errors.append(f"Region {region_id} is disconnected on Floor {floor}.")
 
     if not finish_connector_is_valid():
@@ -415,33 +422,20 @@ def build_physical_layout(
                 if not floor_regions:
                     raise ValueError(f"No regions were assigned to Floor {floor}.")
 
+                fixed_seeds = {}
+                if floor == 1:
+                    fixed_seeds["R00"] = start_cell
                 labels, assigned, seeds, _ = _grow_connected_regions(
                     grids[floor][0],
                     grids[floor][1],
                     floor_regions,
                     rng,
                     floor,
+                    fixed_seeds=fixed_seeds,
                 )
                 region_labels[floor] = labels
                 region_cells[floor] = assigned
                 region_seeds[floor] = seeds
-
-            # Ensure R00's seed is the selected entrance-adjacent cell.
-            if region_seeds[1].get("R00") != start_cell:
-                region_labels[1], region_cells[1], region_seeds[1], _ = (
-                    _grow_connected_regions(
-                        grids[1][0],
-                        grids[1][1],
-                        [
-                            dict(region, id=("R00" if region["id"] == "R00" else region["id"]))
-                            for region in plan["regions"]
-                            if region["floor"] == 1
-                        ],
-                        rng,
-                        1,
-                    )
-                )
-                start_cell = region_seeds[1]["R00"]
 
             assigned_cells = _match_transition_cells(
                 plan,
