@@ -40,7 +40,7 @@ def _edge_key(cell_a, cell_b):
 
 
 def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds):
-    """Grow connected territories around all preselected transition anchors."""
+    """Connect each region's anchors first, then grow connected territories."""
     cells = set(cells)
     if not cells:
         raise ValueError(f"Floor {floor} has no playable cells.")
@@ -62,12 +62,8 @@ def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds
             f"Floor {floor} must have transition anchors for every assigned region."
         )
 
-    labels = {}
-    pending = deque()
     anchors = {}
-
-    # First reserve every required endpoint. A transition cell is therefore
-    # guaranteed to belong to the intended region on both floors it serves.
+    anchor_owner = {}
     for region in regions:
         region_id = region["id"]
         region_anchors = set(fixed_seeds[region_id])
@@ -77,18 +73,82 @@ def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds
             raise ValueError(f"An anchor for {region_id} is not playable on Floor {floor}.")
         anchors[region_id] = region_anchors
         for cell in region_anchors:
-            if cell in labels:
+            if cell in anchor_owner:
                 raise ValueError(
-                    f"Two regions claim the same anchor cell {cell} on Floor {floor}."
+                    f"Two regions claim anchor {cell} on Floor {floor}."
                 )
-            labels[cell] = region_id
+            anchor_owner[cell] = region_id
 
-    # Multi-source growth expands each region from all of its required
-    # transition endpoints. Random queue order varies the resulting borders.
+    # Reserve a connected path-tree for every region. Paths may use unclaimed
+    # cells, but may not cross another region's anchors or an existing tree.
+    # Regions with more anchors are handled first to reduce later conflicts.
+    region_order = list(region_ids)
+    rng.shuffle(region_order)
+    region_order.sort(key=lambda region_id: -len(anchors[region_id]))
+    region_trees = {}
+    claimed_by = {}
+
+    for region_id in region_order:
+        region_anchors = list(anchors[region_id])
+        rng.shuffle(region_anchors)
+        tree_cells = {region_anchors.pop()}
+        for cell in tree_cells:
+            claimed_by[cell] = region_id
+
+        while region_anchors:
+            rng.shuffle(region_anchors)
+            best_path = None
+            best_anchor = None
+            for anchor in region_anchors:
+                allowed = {
+                    cell for cell in cells
+                    if cell not in claimed_by or claimed_by[cell] == region_id
+                }
+                allowed_graph = base_graph.subgraph(allowed)
+                try:
+                    path = nx.shortest_path(
+                        allowed_graph,
+                        source=min(tree_cells),
+                        target=anchor,
+                    )
+                except (nx.NetworkXNoPath, nx.NodeNotFound):
+                    # A multi-source search below may still reach the anchor
+                    # from another branch of this region's existing tree.
+                    try:
+                        path = nx.multi_source_dijkstra_path(
+                            allowed_graph,
+                            sources=tree_cells,
+                            target=anchor,
+                        )
+                    except (nx.NetworkXNoPath, nx.NodeNotFound):
+                        continue
+                if best_path is None or len(path) < len(best_path):
+                    best_path = path
+                    best_anchor = anchor
+
+            if best_path is None:
+                raise ValueError(
+                    f"Could not connect all anchors for {region_id} on Floor {floor}."
+                )
+            for cell in best_path:
+                previous_owner = claimed_by.get(cell)
+                if previous_owner not in (None, region_id):
+                    raise ValueError("Region connector path crossed another region.")
+                claimed_by[cell] = region_id
+                tree_cells.add(cell)
+            region_anchors.remove(best_anchor)
+
+        region_trees[region_id] = tree_cells
+
+    # Grow all unclaimed cells from the already-connected region trees.
+    # Each newly claimed cell touches an existing cell of that same region,
+    # so connectedness is preserved throughout the expansion.
+    labels = dict(claimed_by)
+    pending = deque()
     seed_items = [
         (region_id, cell)
-        for region_id, region_anchors in anchors.items()
-        for cell in region_anchors
+        for region_id, tree in region_trees.items()
+        for cell in tree
     ]
     rng.shuffle(seed_items)
     pending.extend(seed_items)
@@ -110,15 +170,12 @@ def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds
         region_cells[region_id].add(cell)
 
     for region_id, assigned in region_cells.items():
-        if not assigned:
-            raise ValueError(f"Region {region_id} is empty on Floor {floor}.")
-        if not nx.is_connected(base_graph.subgraph(assigned)):
+        if not assigned or not nx.is_connected(base_graph.subgraph(assigned)):
             raise ValueError(
                 f"Region {region_id} is disconnected on Floor {floor}."
             )
 
-    return labels, region_cells, anchors, base_graph
-
+    return labels, region_cells, region_trees, base_graph
 
 def _select_transition_cells(plan, floor_grids, reserved_cells, rng):
     """Choose unique valid X/Z cells before assigning any region boundaries.
