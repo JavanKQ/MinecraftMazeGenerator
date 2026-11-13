@@ -328,13 +328,17 @@ def render_floor_svg(blueprint, floor, show_solution=False):
                 },
             )
 
-        route_transition_ids = {
-            step["incoming"].get("transition_id")
-            for step in blueprint["solution_route"]
-            if step["floor"] == floor
-            and step.get("incoming")
-            and step["incoming"].get("kind") in ("elevator_up", "drop_down")
-        }
+        route_transition_ids = set()
+        for index in range(1, len(blueprint["solution_route"])):
+            previous = blueprint["solution_route"][index - 1]
+            current = blueprint["solution_route"][index]
+            incoming = current.get("incoming") or {}
+            if (
+                incoming.get("kind") in ("elevator_up", "drop_down")
+                and floor in (previous["floor"], current["floor"])
+            ):
+                if incoming.get("transition_id"):
+                    route_transition_ids.add(incoming["transition_id"])
         for transition in floor_data["transitions"]:
             if transition["id"] in route_transition_ids:
                 x, z = _point(transition["cell"])
