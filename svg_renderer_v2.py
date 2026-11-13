@@ -129,7 +129,10 @@ def render_floor_svg(blueprint, floor, show_solution=False):
             "font-weight": "bold",
             "data-type": "floor-title",
         },
-        f"FLOOR {floor}  |  Y={floor_data['y']}  |  1 unit = 1 block",
+        (
+            f"FLOOR {floor}  |  Y={floor_data['y']}  |  1 unit = 1 block"
+            + ("  |  SOLUTION ROUTE" if show_solution else "")
+        ),
     )
 
     # The footprint is the actual floor platform, including its irregular edges.
@@ -235,6 +238,21 @@ def render_floor_svg(blueprint, floor, show_solution=False):
             _rect(
                 root, x, z, 1, 1, "finish-connector", fill="#16833b"
             )
+        _add(
+            root,
+            "text",
+            {
+                "x": str(region["min_x"] + 2.5),
+                "y": str(region["min_z"] + 3.5),
+                "font-size": "1.1",
+                "font-family": "sans-serif",
+                "font-weight": "bold",
+                "text-anchor": "middle",
+                "fill": "#7a430b",
+                "data-type": "finish-label",
+            },
+            "END",
+        )
 
     # Transition markers are placed at the center of their shared 3x3 cells.
     for transition in floor_data["transitions"]:
@@ -364,7 +382,6 @@ def render_floor_svg(blueprint, floor, show_solution=False):
         ("#ffffff", "Corridor cells"),
         ("#2457a6", "Walls"),
         ("#16833b", "Entrance / connectors"),
-        ("#f4d5a6", "Finish"),
         ("#7438a5", "Elevator / drop"),
     ]
     legend_x = min_x
@@ -392,21 +409,7 @@ def render_floor_svg(blueprint, floor, show_solution=False):
             },
             label,
         )
-        legend_x += 19
-
-    if show_solution:
-        _add(
-            root,
-            "text",
-            {
-                "x": str(legend_x),
-                "y": str(legend_y - 0.2),
-                "font-size": "1.25",
-                "font-family": "sans-serif",
-                "fill": "#d12a8a",
-            },
-            "Solution route",
-        )
+        legend_x += 27
 
     return ET.tostring(root, encoding="unicode", xml_declaration=True)
 
