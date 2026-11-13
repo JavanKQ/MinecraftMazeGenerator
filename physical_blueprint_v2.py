@@ -7,9 +7,9 @@ from geometry_v2 import (
     FINISH_ENTRANCE_BLOCKS,
     FINISH_ENTRANCE_CELL,
     FLOORS,
-    Rectangle,
     finish_connector_is_valid,
 )
+from validation_v2 import validate_multifloor_maze
 
 
 def _edge_key(a, b):
@@ -41,17 +41,21 @@ def _wall_segment(a, b):
 
     if az == bz and abs(ax - bx) == CORRIDOR_WIDTH + 1:
         west_x = min(ax, bx)
-        return [(west_x + CORRIDOR_WIDTH, az + offset)
-                for offset in range(CORRIDOR_WIDTH)]
+        return [
+            (west_x + CORRIDOR_WIDTH, az + offset)
+            for offset in range(CORRIDOR_WIDTH)
+        ]
 
     if ax == bx and abs(az - bz) == CORRIDOR_WIDTH + 1:
         south_z = min(az, bz)
-        return [(ax + offset, south_z + CORRIDOR_WIDTH)
-                for offset in range(CORRIDOR_WIDTH)]
+        return [
+            (ax + offset, south_z + CORRIDOR_WIDTH)
+            for offset in range(CORRIDOR_WIDTH)
+        ]
 
+    # Cells that touch directly have no physical wall segment between them.
     if az == bz and abs(ax - bx) == CORRIDOR_WIDTH:
         return []
-
     if ax == bx and abs(az - bz) == CORRIDOR_WIDTH:
         return []
 
@@ -84,16 +88,19 @@ def _shared_boundary_blocks(cell, marker):
 
 def build_physical_blueprint(floor_mazes, graph, route, transitions):
     """
-    Convert generated maze data into a renderer-independent physical blueprint.
+    Convert validated maze data into a renderer-independent physical blueprint.
 
     This function does not generate or alter the maze. It records the physical
     floor regions, traversable cells, open passages, closed wall segments,
     special connectors, vertical transitions, and solution route.
     """
-    if set(floor_mazes) != set(FLOORS):
-        raise ValueError("Blueprint input must contain exactly the defined floors.")
-    if not route:
-        raise ValueError("A physical blueprint requires a non-empty solution route.")
+    validation = validate_multifloor_maze(
+        floor_mazes, graph, route, transitions
+    )
+    if not validation["valid"]:
+        details = "; ".join(validation["errors"])
+        raise ValueError(f"Cannot blueprint an invalid maze: {details}")
+
     if not finish_connector_is_valid():
         raise ValueError("The special finish connector is not physically valid.")
 
@@ -107,8 +114,6 @@ def build_physical_blueprint(floor_mazes, graph, route, transitions):
     entrance_blocks = _shared_boundary_blocks(start_cell, ENTRANCE)
     if not entrance_blocks:
         raise ValueError("The selected starting cell does not touch the entrance.")
-    if any(not ENTRANCE.contains(x, z) for x, z in entrance_blocks):
-        raise ValueError("An entrance connector block falls outside the entrance.")
 
     floor_blueprints = {}
     for floor, maze in floor_mazes.items():
@@ -120,19 +125,14 @@ def build_physical_blueprint(floor_mazes, graph, route, transitions):
             for neighbor in neighbors
         }
 
-        if not opened_edges <= possible_edges:
-            raise ValueError(f"Floor {floor} contains an opened non-adjacent passage.")
-
         open_passages = []
         wall_segments = []
         for a, b in sorted(possible_edges):
             blocks = _wall_segment(a, b)
-            is_open = _edge_key(a, b) in opened_edges
-            if is_open:
+            if _edge_key(a, b) in opened_edges:
                 open_passages.append({
                     "cells": [a, b],
                     "opening_blocks": blocks,
-                    "wall_blocks": [],
                 })
             elif not blocks:
                 raise ValueError(
@@ -169,9 +169,10 @@ def build_physical_blueprint(floor_mazes, graph, route, transitions):
                 for rectangle in FLOORS[floor]["footprint"]
             ],
             "cells": sorted(cells),
-            "cell_blocks": {
-                cell: _cell_blocks(cell) for cell in sorted(cells)
-            },
+            "cell_blocks": [
+                {"cell": cell, "blocks": _cell_blocks(cell)}
+                for cell in sorted(cells)
+            ],
             "open_passages": open_passages,
             "wall_segments": wall_segments,
             "route_cells": floor_route,
@@ -185,13 +186,9 @@ def build_physical_blueprint(floor_mazes, graph, route, transitions):
         if index:
             previous = route[index - 1]
             edge_data = graph.get_edge_data(previous, node)
-            if edge_data is None:
-                raise ValueError(
-                    f"Solution route contains a missing edge: {previous} -> {node}."
-                )
             incoming = {
                 "from": previous,
-                "kind": edge_data.get("kind"),
+                "kind": edge_data["kind"],
                 "transition_id": edge_data.get("transition_id"),
             }
         route_steps.append({
