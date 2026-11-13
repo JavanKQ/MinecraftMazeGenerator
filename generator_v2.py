@@ -1,5 +1,6 @@
 from collections import deque
 import random
+import math
 
 import networkx as nx
 
@@ -10,8 +11,13 @@ def edge_key(a, b):
     return tuple(sorted((a, b)))
 
 
-def carve_maze(cells, connections, seed):
-    """Carve a randomized spanning tree through one floor's valid cell graph."""
+DEFAULT_LOOP_PERCENTAGE = 12
+
+
+def carve_maze(cells, connections, seed, loop_percentage=DEFAULT_LOOP_PERCENTAGE):
+    """Carve a randomized spanning tree, then add the configured extra loops."""
+    if not 0 <= loop_percentage <= 100:
+        raise ValueError("loop_percentage must be between 0 and 100.")
     graph = nx.Graph()
     graph.add_nodes_from(sorted(cells))
     graph_edges = sorted({
@@ -38,6 +44,19 @@ def carve_maze(cells, connections, seed):
         raise ValueError("Maze carving did not produce a spanning tree.")
 
     opened_edges = {edge_key(a, b) for a, b in tree.edges}
+    closed_edges = sorted(
+        edge_key(a, b)
+        for a, b in graph.edges
+        if edge_key(a, b) not in opened_edges
+    )
+
+    # Extra loops are measured against the spanning-tree passage count.
+    extra_loop_count = min(
+        len(closed_edges),
+        math.floor(len(opened_edges) * loop_percentage / 100 + 0.5),
+    )
+    opened_edges.update(rng.sample(closed_edges, extra_loop_count))
+
     return opened_edges, graph.number_of_edges()
 
 
@@ -86,7 +105,7 @@ def calculate_statistics(cells, opened_edges):
     }
 
 
-def generate_floor_mazes(seed):
+def generate_floor_mazes(seed, loop_percentage=DEFAULT_LOOP_PERCENTAGE):
     """Generate an independent horizontal maze tree for every defined floor."""
     mazes = {}
 
@@ -97,6 +116,7 @@ def generate_floor_mazes(seed):
             cells,
             connections,
             floor_seed,
+            loop_percentage=loop_percentage,
         )
 
         mazes[floor] = {
@@ -104,6 +124,7 @@ def generate_floor_mazes(seed):
             "connections": connections,
             "opened_edges": opened_edges,
             "possible_edges": possible_edges,
+            "loop_percentage": loop_percentage,
             "statistics": calculate_statistics(cells, opened_edges),
             "seed": floor_seed,
         }
