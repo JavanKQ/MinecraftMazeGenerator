@@ -298,11 +298,11 @@ def validate_physical_layout(layout):
         source_region = plan_area["source_region"]
         destination_region = plan_area["destination_region"]
 
-        if region_cells[source_floor].get(source_region, set()).__contains__(area.cell) is False:
+        if area.cell not in region_cells[source_floor].get(source_region, set()):
             errors.append(
                 f"{area.id} is not inside source region {source_region}."
             )
-        if region_cells[destination_floor].get(destination_region, set()).__contains__(area.cell) is False:
+        if area.cell not in region_cells[destination_floor].get(destination_region, set()):
             errors.append(
                 f"{area.id} is not inside destination region {destination_region}."
             )
@@ -322,19 +322,17 @@ def validate_physical_layout(layout):
                 )
 
         for region_id, assigned in region_cells[floor].items():
-            if assigned:
-                region_graph = nx.Graph()
-                region_graph.add_nodes_from(assigned)
-                region_graph.add_edges_from(
-                    (cell, neighbor)
-                    for cell in assigned
-                    for neighbor in maze["connections"][cell]
-                    if neighbor in assigned
+            region_graph = nx.Graph()
+            region_graph.add_nodes_from(assigned)
+            region_graph.add_edges_from(
+                (cell_a, cell_b)
+                for cell_a, cell_b in maze["opened_edges"]
+                if cell_a in assigned and cell_b in assigned
+            )
+            if not assigned or not nx.is_connected(region_graph):
+                errors.append(
+                    f"Carved region {region_id} is disconnected on Floor {floor}."
                 )
-            else:
-                region_graph = nx.Graph()
-            if assigned and not nx.is_connected(region_graph):
-                errors.append(f"Region {region_id} is disconnected on Floor {floor}.")
 
     if not finish_connector_is_valid():
         errors.append("The special finish entrance connector is physically invalid.")
