@@ -7,7 +7,6 @@ from geometry import (
 	ENTRANCE,
 	FINISH,
 	FLOOR_1,
-	floor_footprint,
 	floor_block_coordinates,
 )
 SCALE = 8
@@ -97,8 +96,8 @@ def remove_isolated_wall_blocks(wall_blocks):
 	return set(wall_blocks) - isolated
 
 
-def build_wall_blocks(cells, opened_edges, floor=1):
-	floor_blocks = floor_block_coordinates(floor)
+def build_wall_blocks(cells, opened_edges):
+	floor_blocks = floor_block_coordinates()
 	walkable_blocks = (
 		cell_block_coordinates(cells)
 		| build_passage_blocks(opened_edges)
@@ -117,11 +116,10 @@ def export_blueprint(
 	route_notes=(),
 	output_directory=None,
 ):
-	footprint = floor_footprint(floor)
-	min_x = min(rect.min_x for rect in footprint)
-	max_x = max(rect.max_x for rect in footprint)
-	min_z = min(rect.min_z for rect in footprint)
-	max_z = max(rect.max_z for rect in footprint)
+	min_x = min(rect.min_x for rect in FLOOR_1)
+	max_x = max(rect.max_x for rect in FLOOR_1)
+	min_z = min(rect.min_z for rect in FLOOR_1)
+	max_z = max(rect.max_z for rect in FLOOR_1)
 	map_width = (max_x - min_x + 1) * SCALE
 	map_height = (max_z - min_z + 1) * SCALE
 	svg_width = map_width + MARGIN * 2
@@ -146,18 +144,13 @@ def export_blueprint(
 			f'fill="{color}"/>'
 		)
 
-	endpoint_regions = []
-	if floor == 1:
-		endpoint_regions.append(ENTRANCE)
-	if floor == 3:
-		endpoint_regions.append(FINISH)
 	marker_blocks = {
 		(x, z)
-		for marker in endpoint_regions
+		for marker in (ENTRANCE, FINISH)
 		for x in range(marker.min_x, marker.max_x + 1)
 		for z in range(marker.min_z, marker.max_z + 1)
 	}
-	walls = build_wall_blocks(cells, opened_edges, floor) - marker_blocks
+	walls = build_wall_blocks(cells, opened_edges) - marker_blocks
 	parts = [
 		f'<svg xmlns="http://www.w3.org/2000/svg" '
 		f'width="{svg_width}" height="{svg_height}" '
@@ -166,7 +159,7 @@ def export_blueprint(
 		f'<rect width="100%" height="100%" fill="{COLORS["unusable"]}"/>',
 	]
 
-	for rect in footprint:
+	for rect in FLOOR_1:
 		parts.append(draw_rect(
 			rect.min_x,
 			rect.min_z,
@@ -261,7 +254,7 @@ def export_blueprint(
 
 
 def export_three_floor_blueprints(
-	cells_by_floor,
+	cells,
 	graph,
 	route,
 	transitions,
@@ -391,11 +384,6 @@ def export_three_floor_blueprints(
 
 	output_paths = []
 	for floor in range(1, 4):
-		floor_cells = (
-			cells_by_floor[floor]
-			if isinstance(cells_by_floor, dict)
-			else cells_by_floor
-		)
 		markers = [
 			{
 				"cell": marker["cell"],
@@ -406,7 +394,7 @@ def export_three_floor_blueprints(
 			for marker in markers_by_floor[floor].values()
 		]
 		output_paths.append(export_blueprint(
-			floor_cells,
+			cells,
 			floor_edges[floor],
 			seed,
 			floor=floor,
