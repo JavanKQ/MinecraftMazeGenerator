@@ -4,6 +4,7 @@ import networkx as nx
 
 from geometry_v2 import FLOORS
 from generator_v2 import (
+    DEFAULT_LOOP_PERCENTAGE,
     calculate_statistics,
     carve_maze,
     edge_key,
@@ -35,6 +36,30 @@ class GeneratorV2Tests(unittest.TestCase):
                         }
                         for a, b in opened_edges
                     )
+                )
+
+    def test_default_loop_percentage_adds_extra_passages(self):
+        mazes = generate_floor_mazes("loop-test")
+        self.assertEqual(DEFAULT_LOOP_PERCENTAGE, 12)
+
+        for floor, maze in mazes.items():
+            with self.subTest(floor=floor):
+                tree_passages = len(maze["cells"]) - 1
+                expected_loops = round(tree_passages * 0.12)
+                actual_loops = len(maze["opened_edges"]) - tree_passages
+                self.assertEqual(actual_loops, expected_loops)
+                self.assertEqual(
+                    maze["statistics"]["passages"],
+                    tree_passages + expected_loops,
+                )
+
+    def test_zero_loop_percentage_keeps_perfect_tree(self):
+        mazes = generate_floor_mazes("no-loops", loop_percentage=0)
+        for floor, maze in mazes.items():
+            with self.subTest(floor=floor):
+                self.assertEqual(
+                    len(maze["opened_edges"]),
+                    len(maze["cells"]) - 1,
                 )
 
     def test_generation_is_reproducible(self):
