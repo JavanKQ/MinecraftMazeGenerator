@@ -3,6 +3,10 @@ from collections import deque
 
 from geometry_v2 import (
     FINISH,
+    FINISH_ENTRANCE_BLOCKS,
+    FINISH_ENTRANCE_CELL,
+    FINISH_ENTRANCE_WIDTH,
+    finish_connector_is_valid,
     FLOORS,
     floor_y,
     count_floor_blocks,
@@ -71,6 +75,16 @@ class GeometryV2Tests(unittest.TestCase):
         self.assertTrue(FINISH.contains(11441, 10988))
         self.assertFalse(any(cell_overlaps_finish(x, z) for x, z in cells))
         self.assertEqual(len(cells), EXPECTED_GRID_COUNTS[3])
+
+    def test_finish_connector_geometry(self):
+        self.assertTrue(finish_connector_is_valid())
+        self.assertEqual(FINISH_ENTRANCE_WIDTH, 2)
+        self.assertEqual(len(FINISH_ENTRANCE_BLOCKS), 2)
+        self.assertEqual(FINISH_ENTRANCE_CELL, (11440, 10984))
+        self.assertEqual(FINISH_ENTRANCE_BLOCKS, {
+            (11441, 10987),
+            (11442, 10987),
+        })
 
     def test_shared_grid_cells(self):
         shared = shared_grid_cells()
