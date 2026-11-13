@@ -71,6 +71,16 @@ FLOOR_1 = list(FLOORS[1]["footprint"])
 ENTRANCE = Rectangle(11455, 11455, 10985, 10990)
 FINISH = Rectangle(11441, 11445, 10988, 10993)
 
+# The finish is reached from the south by a deliberately narrower doorway.
+# Its source is one ordinary grid cell; the two connector blocks bridge the
+# one-block gap between that cell and the finish rectangle.
+FINISH_ENTRANCE_CELL = (11440, 10984)
+FINISH_ENTRANCE_WIDTH = 2
+FINISH_ENTRANCE_BLOCKS = frozenset({
+    (11441, 10987),
+    (11442, 10987),
+})
+
 
 def get_floor(floor=1):
     try:
@@ -110,6 +120,25 @@ def cell_fits(x, z, floor=1):
         for dx in range(CORRIDOR_WIDTH)
         for dz in range(CORRIDOR_WIDTH)
     )
+
+
+def finish_connector_is_valid():
+    cells, _ = generate_grid(FINISH_FLOOR)
+    if FINISH_ENTRANCE_CELL not in cells:
+        return False
+
+    for x, z in FINISH_ENTRANCE_BLOCKS:
+        if not floor_contains(x, z, FINISH_FLOOR):
+            return False
+        touches_source = (
+            FINISH_ENTRANCE_CELL[0] <= x < FINISH_ENTRANCE_CELL[0] + CORRIDOR_WIDTH
+            and z == FINISH_ENTRANCE_CELL[1] + CORRIDOR_WIDTH
+        )
+        touches_finish = FINISH.contains(x, z + 1)
+        if not (touches_source and touches_finish):
+            return False
+
+    return len(FINISH_ENTRANCE_BLOCKS) == FINISH_ENTRANCE_WIDTH
 
 
 def cell_overlaps_finish(x, z):
