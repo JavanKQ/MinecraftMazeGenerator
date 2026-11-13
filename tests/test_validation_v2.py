@@ -54,7 +54,10 @@ class ValidationV2Tests(unittest.TestCase):
 
     def test_invalid_transition_cell_is_rejected(self):
         transitions = copy.deepcopy(self.transitions)
-        transitions[0]["cell"] = (-1, -1)
+        invalid_cell = (-1, -1)
+        transitions[0]["cell"] = invalid_cell
+        transitions[0]["from"] = (transitions[0]["from"][0], invalid_cell)
+        transitions[0]["to"] = (transitions[0]["to"][0], invalid_cell)
         report = validate_multifloor_maze(
             self.floor_mazes, self.graph, self.route, transitions
         )
