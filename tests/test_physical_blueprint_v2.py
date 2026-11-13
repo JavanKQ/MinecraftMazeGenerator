@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from geometry_v2 import (
@@ -89,6 +90,10 @@ class TestPhysicalBlueprint(unittest.TestCase):
             self.assertEqual(rendered["id"], original["id"])
             self.assertEqual(rendered["from"], original["from"])
             self.assertEqual(rendered["to"], original["to"])
+
+    def test_blueprint_can_be_serialized_to_json(self):
+        serialized = json.dumps(self.blueprint)
+        self.assertTrue(serialized.startswith("{"))
 
 
 if __name__ == "__main__":
