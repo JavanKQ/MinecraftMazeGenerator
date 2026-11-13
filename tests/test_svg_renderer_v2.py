@@ -1,9 +1,16 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from xml.etree import ElementTree as ET
 
 from multifloor_v2 import build_multifloor_maze
 from physical_blueprint_v2 import build_physical_blueprint
-from svg_renderer_v2 import SVG_NS, render_all_floor_svgs, render_floor_svg
+from svg_renderer_v2 import (
+    SVG_NS,
+    render_all_floor_svgs,
+    render_floor_svg,
+    write_all_floor_svgs,
+)
 
 
 def _elements(root, data_type):
@@ -115,6 +122,57 @@ class TestSvgRenderer(unittest.TestCase):
         self.assertEqual(len(_elements(floor_one, "entrance-connector")), 2)
         self.assertEqual(len(_elements(floor_three, "finish")), 1)
         self.assertEqual(len(_elements(floor_three, "finish-connector")), 2)
+
+    def test_open_passage_blocks_match_the_blueprint(self):
+        svgs = render_all_floor_svgs(self.blueprint)
+        for floor, svg in svgs.items():
+            root = self.parse(svg)
+            groups = _elements(root, "open-passage")
+            expected = self.blueprint["floors"][floor]["open_passages"]
+            self.assertEqual(len(groups), len(expected))
+            for group, passage in zip(groups, expected):
+                actual_blocks = {
+                    (int(rect.attrib["x"]), int(rect.attrib["y"]))
+                    for rect in group.findall(f"{{{SVG_NS}}}rect")
+                }
+                self.assertEqual(
+                    actual_blocks, set(map(tuple, passage["opening_blocks"]))
+                )
+
+    def test_solution_transition_is_highlighted_on_both_floors(self):
+        svgs = render_all_floor_svgs(self.blueprint, show_solution=True)
+        for floor, svg in svgs.items():
+            root = self.parse(svg)
+            actual = {
+                item.attrib["data-id"]
+                for item in _elements(root, "solution-transition")
+            }
+            expected = set()
+            steps = self.blueprint["solution_route"]
+            for index in range(1, len(steps)):
+                previous = steps[index - 1]
+                current = steps[index]
+                incoming = current.get("incoming") or {}
+                if (
+                    incoming.get("kind") in ("elevator_up", "drop_down")
+                    and floor in (previous["floor"], current["floor"])
+                ):
+                    expected.add(incoming["transition_id"])
+            self.assertEqual(actual, expected)
+
+    def test_file_export_writes_both_view_modes(self):
+        with TemporaryDirectory() as directory:
+            normal = write_all_floor_svgs(self.blueprint, Path(directory) / "normal")
+            solution = write_all_floor_svgs(
+                self.blueprint,
+                Path(directory) / "solution",
+                show_solution=True,
+            )
+            self.assertEqual(set(normal), {1, 2, 3})
+            self.assertEqual(set(solution), {1, 2, 3})
+            self.assertTrue(all(path.is_file() for path in normal.values()))
+            self.assertTrue(all(path.is_file() for path in solution.values()))
+            self.assertTrue(all(path.name.endswith("_solution.svg") for path in solution.values()))
 
     def test_single_floor_rendering_rejects_unknown_floor(self):
         with self.assertRaises(ValueError):
