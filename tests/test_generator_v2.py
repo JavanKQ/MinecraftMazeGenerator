@@ -13,7 +13,7 @@ from generator_v2 import (
 
 
 class GeneratorV2Tests(unittest.TestCase):
-    def test_each_floor_generates_a_spanning_tree(self):
+    def test_each_floor_generates_a_connected_maze(self):
         mazes = generate_floor_mazes("geometry-v2-test")
 
         self.assertEqual(set(mazes), set(FLOORS))
@@ -25,8 +25,11 @@ class GeneratorV2Tests(unittest.TestCase):
                 graph.add_nodes_from(cells)
                 graph.add_edges_from(opened_edges)
 
-                self.assertEqual(len(opened_edges), len(cells) - 1)
-                self.assertTrue(nx.is_tree(graph))
+                self.assertTrue(nx.is_connected(graph))
+                self.assertEqual(
+                    len(opened_edges),
+                    len(cells) - 1 + round((len(cells) - 1) * 0.12),
+                )
                 self.assertTrue(
                     all(
                         edge_key(a, b) in {
@@ -89,11 +92,14 @@ class GeneratorV2Tests(unittest.TestCase):
                     maze["opened_edges"],
                 )
                 self.assertEqual(stats["cells"], len(maze["cells"]))
-                self.assertEqual(stats["passages"], len(maze["cells"]) - 1)
                 self.assertEqual(
-                    stats["dead_ends"] + stats["junctions"]
-                    <= stats["cells"],
-                    True,
+                    stats["passages"],
+                    len(maze["cells"]) - 1
+                    + round((len(maze["cells"]) - 1) * 0.12),
+                )
+                self.assertLessEqual(
+                    stats["dead_ends"] + stats["junctions"],
+                    stats["cells"],
                 )
 
     def test_disconnected_input_is_rejected(self):
