@@ -3,8 +3,8 @@ import unittest
 from geometry_v2 import (
     FINISH_ENTRANCE_BLOCKS,
     FINISH_ENTRANCE_CELL,
+    FLOORS,
 )
-from generator_v2 import generate_floor_mazes
 from multifloor_v2 import build_multifloor_maze
 from physical_blueprint_v2 import build_physical_blueprint
 
@@ -26,12 +26,17 @@ class TestPhysicalBlueprint(unittest.TestCase):
         for floor, maze in self.floor_mazes.items():
             blueprint_floor = self.blueprint["floors"][floor]
             self.assertEqual(set(blueprint_floor["cells"]), maze["cells"])
-            self.assertEqual(len(blueprint_floor["footprint"]), len(
-                __import__("geometry_v2").FLOORS[floor]["footprint"]
-            ))
+            self.assertEqual(
+                len(blueprint_floor["footprint"]),
+                len(FLOORS[floor]["footprint"]),
+            )
+            self.assertEqual(
+                len(blueprint_floor["cell_blocks"]),
+                len(maze["cells"]),
+            )
 
     def test_every_possible_connection_is_either_open_or_walled(self):
-        for floor_data in self.blueprint["floors"].values():
+        for floor, floor_data in self.blueprint["floors"].items():
             open_edges = {
                 frozenset(tuple(cell) for cell in passage["cells"])
                 for passage in floor_data["open_passages"]
@@ -40,11 +45,12 @@ class TestPhysicalBlueprint(unittest.TestCase):
                 frozenset(tuple(cell) for cell in wall["cells"])
                 for wall in floor_data["wall_segments"]
             }
+            expected_edge_count = sum(
+                len(neighbors)
+                for neighbors in self.floor_mazes[floor]["connections"].values()
+            ) // 2
             self.assertFalse(open_edges & wall_edges)
-            self.assertEqual(
-                len(open_edges) + len(wall_edges),
-                len(floor_data["open_passages"]) + len(floor_data["wall_segments"]),
-            )
+            self.assertEqual(len(open_edges) + len(wall_edges), expected_edge_count)
 
     def test_wall_segments_have_three_blocks(self):
         for floor_data in self.blueprint["floors"].values():
@@ -60,7 +66,7 @@ class TestPhysicalBlueprint(unittest.TestCase):
             self.blueprint["finish"]["source_cell"],
             FINISH_ENTRANCE_CELL,
         )
-        self.assertTrue(self.blueprint["entrance"]["opening_blocks"])
+        self.assertEqual(len(self.blueprint["entrance"]["opening_blocks"]), 2)
 
     def test_solution_route_steps_match_graph_edges(self):
         steps = self.blueprint["solution_route"]
