@@ -392,7 +392,7 @@ def render_floor_svg(blueprint, floor, show_solution=False):
             },
             label,
         )
-        legend_x += 21
+        legend_x += 19
 
     if show_solution:
         _add(
