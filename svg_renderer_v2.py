@@ -364,6 +364,7 @@ def render_floor_svg(blueprint, floor, show_solution=False):
         ("#ffffff", "Corridor cells"),
         ("#2457a6", "Walls"),
         ("#16833b", "Entrance / connectors"),
+        ("#f4d5a6", "Finish"),
         ("#7438a5", "Elevator / drop"),
     ]
     legend_x = min_x
@@ -391,7 +392,7 @@ def render_floor_svg(blueprint, floor, show_solution=False):
             },
             label,
         )
-        legend_x += 27
+        legend_x += 21
 
     if show_solution:
         _add(
