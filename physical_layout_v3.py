@@ -109,22 +109,17 @@ def _grow_connected_regions(cells, connections, regions, rng, floor, fixed_seeds
                 }
                 allowed_graph = base_graph.subgraph(allowed)
                 try:
-                    path = nx.shortest_path(
+                    # Search from every cell in this region's existing tree.
+                    # A particular tree cell may not reach the anchor when
+                    # other regions' reserved anchors block the shortest route,
+                    # while another branch of the same tree still can.
+                    _, path = nx.multi_source_dijkstra(
                         allowed_graph,
-                        source=min(tree_cells),
+                        sources=tree_cells,
                         target=anchor,
                     )
                 except (nx.NetworkXNoPath, nx.NodeNotFound):
-                    # A multi-source search below may still reach the anchor
-                    # from another branch of this region's existing tree.
-                    try:
-                        path = nx.multi_source_dijkstra_path(
-                            allowed_graph,
-                            sources=tree_cells,
-                            target=anchor,
-                        )
-                    except (nx.NetworkXNoPath, nx.NodeNotFound):
-                        continue
+                    continue
                 if best_path is None or len(path) < len(best_path):
                     best_path = path
                     best_anchor = anchor
