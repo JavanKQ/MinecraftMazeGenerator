@@ -25,6 +25,20 @@ class PhysicalBlueprintV3Tests(unittest.TestCase):
             sum(area.journey_option_count for area in self.layout["transition_areas"]),
         )
 
+    def test_skipped_floors_have_no_transition_marker(self):
+        for area in self.layout["transition_areas"]:
+            served_floors = {
+                floor
+                for journey in area.journeys
+                for floor in journey
+            }
+            marked_floors = {
+                floor
+                for floor, floor_data in self.blueprint["floors"].items()
+                if any(item["id"] == area.id for item in floor_data["transitions"])
+            }
+            self.assertEqual(marked_floors, served_floors, area.id)
+
     def test_solution_route_contains_nine_vertical_journeys(self):
         vertical_steps = [
             step
